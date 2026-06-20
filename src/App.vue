@@ -27,6 +27,7 @@
     @debut="onDebut"
     @resolve-poaching="handlePoaching"
     @release-single="onReleaseSingle"
+    @schedule-tour="onScheduleTour"
   />
 </template>
 
@@ -60,6 +61,7 @@ const {
   backToMenu,
   getRatingResults,
   calcTraineeScore,
+  handleScheduleTour,
 } = useGame()
 
 onMounted(() => {
@@ -96,5 +98,10 @@ function onReleaseSingle(groupId) {
   if (result && !result.success) {
     alert(result.message)
   }
+}
+
+function onScheduleTour(groupId, cityNames, callback) {
+  const result = handleScheduleTour(groupId, cityNames)
+  if (callback) callback(result)
 }
 </script>

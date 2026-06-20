@@ -10,6 +10,11 @@ import {
   calcProfit,
   calcTraineeScore,
   getRelationship,
+  scheduleTour,
+  getGroupReputation,
+  getActiveTours,
+  isGroupOnTour,
+  isTraineeOnTour,
 } from '../utils/gameLogic'
 import { saveToSlot } from '../utils/storage'
 
@@ -60,7 +65,9 @@ export function useGame() {
 
   function canEndDay() {
     if (!state.value) return false
-    const active = activeTrainees.value.filter((t) => t.illnessDays === 0)
+    const active = activeTrainees.value.filter(
+      (t) => t.illnessDays === 0 && !isTraineeOnTour(state.value, t.id)
+    )
     return active.every((t) => state.value.schedule[t.id])
   }
 
@@ -112,6 +119,31 @@ export function useGame() {
     return getRelationship(state.value.relationships, idA, idB)
   }
 
+  function handleScheduleTour(groupId, cityNames) {
+    if (!state.value) return null
+    const result = scheduleTour(state.value, groupId, cityNames)
+    if (result.success) {
+      state.value = result.state
+      autoSave()
+    }
+    return result
+  }
+
+  function getReputation(groupId) {
+    if (!state.value) return 50
+    return getGroupReputation(state.value, groupId)
+  }
+
+  function getActiveToursForGroup(groupId) {
+    if (!state.value) return []
+    return getActiveTours(state.value).filter((t) => t.groupId === groupId)
+  }
+
+  function checkGroupOnTour(groupId) {
+    if (!state.value) return false
+    return isGroupOnTour(state.value, groupId)
+  }
+
   return {
     state,
     currentSlot,
@@ -134,5 +166,9 @@ export function useGame() {
     getRatingResults: () => (state.value ? getRatingResults(state.value) : []),
     calcTraineeScore,
     autoSave,
+    handleScheduleTour,
+    getReputation,
+    getActiveToursForGroup,
+    checkGroupOnTour,
   }
 }

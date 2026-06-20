@@ -195,6 +195,38 @@ export const GAME_CONFIG = {
   ],
 
   // ── 存档 ──
+  tour: {
+    minCities: 2,
+    maxCities: 5,
+    daysPerCity: 2,
+    baseLogisticsCost: 12000,
+    perCityExtraCost: 5000,
+    maxReputation: 100,
+    reputationDecay: 1,
+    fatiguePerformanceThreshold: 65,
+    stressPerformanceThreshold: 60,
+    qualityImpactOnRevenue: 0.5,
+    reputationImpactOnRevenue: 0.3,
+    fansImpactOnRevenue: 0.2,
+    performanceFatigueCost: [8, 14],
+    performanceStressCost: [3, 8],
+    restDayFatigueRecovery: [-12, -6],
+    restDayStressRecovery: [-6, -3],
+    cities: [
+      { name: '北京', tier: 3, baseAttendance: 8000, baseRevenue: 35000, fanGain: [800, 2200], icon: '🏛️' },
+      { name: '上海', tier: 3, baseAttendance: 8500, baseRevenue: 38000, fanGain: [900, 2500], icon: '🌆' },
+      { name: '广州', tier: 2, baseAttendance: 5500, baseRevenue: 24000, fanGain: [500, 1500], icon: '🌺' },
+      { name: '深圳', tier: 2, baseAttendance: 5000, baseRevenue: 22000, fanGain: [500, 1400], icon: '🏢' },
+      { name: '成都', tier: 2, baseAttendance: 5000, baseRevenue: 20000, fanGain: [450, 1300], icon: '🐼' },
+      { name: '杭州', tier: 2, baseAttendance: 5200, baseRevenue: 22000, fanGain: [480, 1400], icon: '🌸' },
+      { name: '武汉', tier: 1, baseAttendance: 3500, baseRevenue: 15000, fanGain: [300, 900], icon: '🏯' },
+      { name: '长沙', tier: 1, baseAttendance: 3200, baseRevenue: 14000, fanGain: [280, 850], icon: '🌶️' },
+      { name: '南京', tier: 1, baseAttendance: 3400, baseRevenue: 15000, fanGain: [300, 880], icon: '⛰️' },
+      { name: '重庆', tier: 1, baseAttendance: 3600, baseRevenue: 14000, fanGain: [300, 900], icon: '🌉' },
+    ],
+    cooldownDays: 45,
+  },
+
   storage: {
     savesKey: 'idol-agency-saves-v1',
     themeKey: 'idol-agency-theme',

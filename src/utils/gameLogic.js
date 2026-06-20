@@ -24,6 +24,9 @@ export function createInitialGameState() {
     pendingRating: false,
     gameStatus: 'playing',
     lastSingleDay: {},
+    tours: [],
+    groupReputation: {},
+    lastTourDay: {},
   }
 }
 
@@ -137,22 +140,35 @@ function getTrainingMultiplier(trainee, partners, relationships) {
 }
 
 export function processDay(state) {
+  let state_ = processTourDay(state)
+
   const logs = []
-  let money = state.money
-  let fans = state.fans
-  let totalExpenses = state.totalExpenses
-  const relationships = { ...state.relationships }
-  const trainees = state.trainees.map((t) => ({ ...t, stats: { ...t.stats } }))
-  const schedule = state.schedule
+  let money = state_.money
+  let fans = state_.fans
+  let totalExpenses = state_.totalExpenses
+  const relationships = { ...state_.relationships }
+  const trainees = state_.trainees.map((t) => ({ ...t, stats: { ...t.stats } }))
+  const schedule = state_.schedule
+
+  const onTourIds = new Set()
+  for (const tour of (state_.tours || [])) {
+    if (tour.status !== 'ongoing') continue
+    const group = state_.groups.find((g) => g.id === tour.groupId)
+    if (group) {
+      for (const mid of group.memberIds) onTourIds.add(mid)
+    }
+  }
 
   const activityGroups = {}
   for (const [traineeId, activity] of Object.entries(schedule)) {
+    if (onTourIds.has(traineeId)) continue
     if (!activityGroups[activity]) activityGroups[activity] = []
     activityGroups[activity].push(traineeId)
   }
 
   for (const trainee of trainees) {
     if (trainee.status === 'left') continue
+    if (onTourIds.has(trainee.id)) continue
 
     if (trainee.illnessDays > 0) {
       trainee.illnessDays--
@@ -311,16 +327,28 @@ export function processDay(state) {
     }
   }
 
+  const groupReputation = { ...state_.groupReputation }
+  for (const g of state_.groups) {
+    if (groupReputation[g.id] !== undefined) {
+      groupReputation[g.id] = clamp(
+        groupReputation[g.id] - CFG.tour.reputationDecay,
+        0,
+        CFG.tour.maxReputation
+      )
+    }
+  }
+
   const nextState = {
-    ...state,
+    ...state_,
     day: newDay,
     money,
     fans,
     totalExpenses,
     trainees,
     relationships,
+    groupReputation,
     schedule: {},
-    logs: [...state.logs, ...logs],
+    logs: [...state_.logs, ...logs],
     pendingEvent,
     pendingRating,
   }
@@ -554,4 +582,261 @@ export function getRatingResults(state) {
       canDebut: calcTraineeScore(t) >= CFG.rating.debutScoreThreshold,
     }))
     .sort((a, b) => b.score - a.score)
+}
+
+export function getGroupReputation(state, groupId) {
+  return state.groupReputation[groupId] ?? 50
+}
+
+export function getActiveTours(state) {
+  return (state.tours || []).filter((t) => t.status === 'ongoing')
+}
+
+export function isGroupOnTour(state, groupId) {
+  return getActiveTours(state).some((t) => t.groupId === groupId)
+}
+
+export function isTraineeOnTour(state, traineeId) {
+  const activeTours = getActiveTours(state)
+  if (activeTours.length === 0) return false
+  const onTourGroupIds = new Set(activeTours.map((t) => t.groupId))
+  const trainee = state.trainees.find((t) => t.id === traineeId)
+  return trainee && onTourGroupIds.has(trainee.groupId)
+}
+
+export function scheduleTour(state, groupId, cityNames) {
+  const group = state.groups.find((g) => g.id === groupId)
+  if (!group) return { success: false, message: '组合不存在' }
+
+  if (cityNames.length < CFG.tour.minCities || cityNames.length > CFG.tour.maxCities) {
+    return { success: false, message: `巡演城市数量需在 ${CFG.tour.minCities}-${CFG.tour.maxCities} 之间` }
+  }
+
+  if (isGroupOnTour(state, groupId)) {
+    return { success: false, message: '该组合正在巡演中' }
+  }
+
+  const lastDay = state.lastTourDay[groupId] || 0
+  if (state.day - lastDay < CFG.tour.cooldownDays) {
+    return {
+      success: false,
+      message: `距上次巡演还需 ${CFG.tour.cooldownDays - (state.day - lastDay)} 天冷却`,
+    }
+  }
+
+  const logisticsCost =
+    CFG.tour.baseLogisticsCost + cityNames.length * CFG.tour.perCityExtraCost
+
+  if (state.money < logisticsCost) {
+    return { success: false, message: '资金不足以支付巡演后勤费用' }
+  }
+
+  const members = state.trainees.filter((t) => group.memberIds.includes(t.id))
+  const avgFatigue = members.reduce((s, m) => s + m.fatigue, 0) / members.length
+  if (avgFatigue >= CFG.tour.fatiguePerformanceThreshold) {
+    return { success: false, message: '成员平均体力过低，无法出发巡演' }
+  }
+
+  const cityConfigs = cityNames
+    .map((name) => CFG.tour.cities.find((c) => c.name === name))
+    .filter(Boolean)
+
+  const tourId = `tour_${Date.now()}`
+  const totalDays = cityNames.length * CFG.tour.daysPerCity
+
+  const tour = {
+    id: tourId,
+    groupId,
+    cities: cityConfigs.map((c) => ({ ...c })),
+    startDay: state.day,
+    totalDays,
+    currentDay: 0,
+    status: 'ongoing',
+    revenue: 0,
+    results: [],
+  }
+
+  const tours = [...(state.tours || []), tour]
+  const groupReputation = { ...state.groupReputation }
+  if (!(groupId in groupReputation)) {
+    groupReputation[groupId] = 50
+  }
+
+  const logs = [
+    ...state.logs,
+    {
+      day: state.day,
+      text: `🎤 ${group.name} 出发巡演！途经 ${cityNames.join('→')}，共 ${totalDays} 天。`,
+    },
+  ]
+
+  return {
+    success: true,
+    state: {
+      ...state,
+      money: state.money - logisticsCost,
+      totalExpenses: state.totalExpenses + logisticsCost,
+      tours,
+      groupReputation,
+      logs,
+    },
+    tourId,
+  }
+}
+
+function calcPerformanceQuality(members) {
+  if (members.length === 0) return 0
+  const avgFatigue = members.reduce((s, m) => s + m.fatigue, 0) / members.length
+  const avgStress = members.reduce((s, m) => s + m.stress, 0) / members.length
+
+  let quality = 100
+  if (avgFatigue > CFG.tour.fatiguePerformanceThreshold) {
+    quality -= (avgFatigue - CFG.tour.fatiguePerformanceThreshold) * 1.2
+  }
+  if (avgStress > CFG.tour.stressPerformanceThreshold) {
+    quality -= (avgStress - CFG.tour.stressPerformanceThreshold) * 0.8
+  }
+
+  const avgStat =
+    CFG.stats.reduce((s, k) => {
+      const groupAvg = members.reduce((ss, m) => ss + m.stats[k], 0) / members.length
+      return s + groupAvg
+    }, 0) / CFG.stats.length
+  quality += (avgStat - 50) * 0.3
+
+  return clamp(Math.round(quality), 10, 120)
+}
+
+export function processTourDay(state) {
+  const tours = (state.tours || []).filter((t) => t.status === 'ongoing')
+  if (tours.length === 0) return state
+
+  const logs = [...state.logs]
+  let money = state.money
+  let fans = state.fans
+  let totalRevenue = state.totalRevenue
+  const trainees = state.trainees.map((t) => ({ ...t, stats: { ...t.stats } }))
+  const groupReputation = { ...state.groupReputation }
+  let lastTourDay = { ...state.lastTourDay }
+  const updatedTours = state.tours.map((tour) => {
+    if (tour.status !== 'ongoing') return tour
+    const tour_ = { ...tour, currentDay: tour.currentDay + 1 }
+
+    const cityIndex = Math.floor((tour_.currentDay - 1) / CFG.tour.daysPerCity)
+    const dayInCity = ((tour_.currentDay - 1) % CFG.tour.daysPerCity) + 1
+    const city = tour.cities[cityIndex]
+
+    if (!city) return tour
+
+    const group = state.groups.find((g) => g.id === tour.groupId)
+    const members = trainees.filter((t) => group && group.memberIds.includes(t.id))
+
+    if (dayInCity === 1) {
+      const quality = calcPerformanceQuality(members)
+      const reputation = groupReputation[tour.groupId] ?? 50
+
+      const qualityFactor = quality / 100
+      const repFactor = reputation / 100
+      const fansFactor = Math.min(fans / 10000, 2)
+
+      const revenue = Math.round(
+        city.baseRevenue *
+          (CFG.tour.qualityImpactOnRevenue * qualityFactor +
+            CFG.tour.reputationImpactOnRevenue * repFactor +
+            CFG.tour.fansImpactOnRevenue * fansFactor) +
+          randInt(-2000, 3000)
+      )
+
+      const attendance = Math.round(
+        city.baseAttendance * qualityFactor * (0.7 + repFactor * 0.3) + randInt(-500, 800)
+      )
+
+      const fanGain = randInt(city.fanGain[0], city.fanGain[1])
+      const roundedFanGain = Math.round(fanGain * qualityFactor)
+
+      money += revenue
+      totalRevenue += revenue
+      fans += roundedFanGain
+
+      for (const m of members) {
+        m.fatigue = clamp(
+          m.fatigue + randInt(CFG.tour.performanceFatigueCost[0], CFG.tour.performanceFatigueCost[1]),
+          0,
+          100
+        )
+        m.stress = clamp(
+          m.stress + randInt(CFG.tour.performanceStressCost[0], CFG.tour.performanceStressCost[1]),
+          0,
+          100
+        )
+        m.fans += Math.round(roundedFanGain / members.length)
+      }
+
+      const repGain = quality >= 80 ? randInt(3, 8) : quality >= 50 ? randInt(0, 3) : randInt(-5, -1)
+      groupReputation[tour.groupId] = clamp(
+        (groupReputation[tour.groupId] ?? 50) + repGain,
+        0,
+        CFG.tour.maxReputation
+      )
+
+      const result = {
+        city: city.name,
+        day: state.day,
+        quality,
+        attendance,
+        revenue,
+        fanGain: roundedFanGain,
+        repGain,
+      }
+
+      tour_.revenue += revenue
+      tour_.results = [...tour_.results, result]
+
+      const qualityLabel = quality >= 80 ? '🔥 精彩' : quality >= 50 ? '👍 不错' : '😅 勉强'
+      logs.push({
+        day: state.day,
+        text: `🎤 ${group?.name || '组合'} ${city.name}站演出 ${qualityLabel}（品质${quality}），上座${attendance.toLocaleString()}人，收入 ¥${revenue.toLocaleString()}`,
+      })
+    } else {
+      for (const m of members) {
+        m.fatigue = clamp(
+          m.fatigue + randInt(CFG.tour.restDayFatigueRecovery[0], CFG.tour.restDayFatigueRecovery[1]),
+          0,
+          100
+        )
+        m.stress = clamp(
+          m.stress + randInt(CFG.tour.restDayStressRecovery[0], CFG.tour.restDayStressRecovery[1]),
+          0,
+          100
+        )
+      }
+      logs.push({
+        day: state.day,
+        text: `😴 ${group?.name || '组合'} 在${city.name}休整一天，恢复体力。`,
+      })
+    }
+
+    if (tour_.currentDay >= tour_.totalDays) {
+      tour_.status = 'completed'
+      lastTourDay[tour.groupId] = state.day
+      logs.push({
+        day: state.day,
+        text: `🎉 ${group?.name || '组合'} 巡演结束！总收入 ¥${tour_.revenue.toLocaleString()}。`,
+      })
+    }
+
+    return tour_
+  })
+
+  return {
+    ...state,
+    money,
+    fans,
+    totalRevenue,
+    trainees,
+    tours: updatedTours,
+    groupReputation,
+    lastTourDay,
+    logs,
+  }
 }

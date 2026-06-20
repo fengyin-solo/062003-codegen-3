@@ -27,6 +27,14 @@
           {{ activities[schedule[trainee.id]]?.label }}
         </span>
       </div>
+      <div
+        v-for="trainee in onTourTrainees"
+        :key="'tour-' + trainee.id"
+        class="schedule-row tour-row"
+      >
+        <span class="name">{{ trainee.name }}</span>
+        <span class="tour-tag">🎤 巡演中</span>
+      </div>
     </div>
 
     <div class="legend">
@@ -53,14 +61,32 @@ const props = defineProps({
   trainees: Array,
   schedule: Object,
   canEnd: Boolean,
+  tours: { type: Array, default: () => [] },
+  groups: { type: Array, default: () => [] },
 })
 
 defineEmits(['set', 'clear', 'end-day'])
 
 const activities = GAME_CONFIG.activities
 
+const onTourIds = computed(() => {
+  const ids = new Set()
+  for (const tour of props.tours) {
+    if (tour.status !== 'ongoing') continue
+    const group = props.groups.find(g => g.id === tour.groupId)
+    if (group) {
+      for (const mid of group.memberIds) ids.add(mid)
+    }
+  }
+  return ids
+})
+
 const schedulable = computed(() =>
-  props.trainees.filter((t) => t.status !== 'left')
+  props.trainees.filter((t) => t.status !== 'left' && !onTourIds.value.has(t.id))
+)
+
+const onTourTrainees = computed(() =>
+  props.trainees.filter((t) => t.status !== 'left' && onTourIds.value.has(t.id))
 )
 </script>
 
@@ -124,6 +150,16 @@ const schedulable = computed(() =>
 .ill-tag {
   font-size: 0.8rem;
   color: var(--warning);
+}
+
+.tour-row {
+  opacity: 0.7;
+}
+
+.tour-tag {
+  font-size: 0.8rem;
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .legend {

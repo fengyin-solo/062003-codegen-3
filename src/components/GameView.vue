@@ -26,6 +26,8 @@
           :trainees="activeTrainees"
           :schedule="state.schedule"
           :can-end="canEndDay"
+          :tours="state.tours || []"
+          :groups="state.groups"
           @set="(id, act) => $emit('set-schedule', id, act)"
           @clear="$emit('clear-schedule')"
           @end-day="$emit('end-day')"
@@ -39,6 +41,16 @@
           :trainees="state.trainees"
           :money="state.money"
           @release="(id) => $emit('release-single', id)"
+        />
+        <TourPanel
+          :groups="state.groups"
+          :trainees="state.trainees"
+          :money="state.money"
+          :tours="state.tours || []"
+          :group-reputation="state.groupReputation || {}"
+          :last-tour-day="state.lastTourDay || {}"
+          :day="state.day"
+          @schedule="(groupId) => showTourModal(groupId)"
         />
         <RelationshipPanel
           :trainees="state.trainees"
@@ -67,6 +79,17 @@
       @resolve="(keep) => $emit('resolve-poaching', keep)"
     />
 
+    <TourModal
+      v-if="tourModalGroupId"
+      :group-id="tourModalGroupId"
+      :groups="state.groups"
+      :trainees="state.trainees"
+      :money="state.money"
+      :group-reputation="state.groupReputation || {}"
+      @close="tourModalGroupId = null"
+      @confirm="onScheduleTour"
+    />
+
     <GameOverModal
       v-if="state.gameStatus !== 'playing'"
       :status="state.gameStatus"
@@ -91,6 +114,8 @@ import RatingModal from './RatingModal.vue'
 import DebutModal from './DebutModal.vue'
 import EventModal from './EventModal.vue'
 import GameOverModal from './GameOverModal.vue'
+import TourPanel from './TourPanel.vue'
+import TourModal from './TourModal.vue'
 
 const props = defineProps({
   state: Object,
@@ -113,10 +138,29 @@ const emit = defineEmits([
   'debut',
   'resolve-poaching',
   'release-single',
+  'schedule-tour',
 ])
 
 const showDebut = ref(false)
+const tourModalGroupId = ref(null)
 const toast = ref('')
+
+function showTourModal(groupId) {
+  tourModalGroupId.value = groupId
+}
+
+function onScheduleTour(groupId, cityNames) {
+  emit('schedule-tour', groupId, cityNames, (result) => {
+    if (result?.success) {
+      tourModalGroupId.value = null
+      toast.value = '巡演出发！'
+      setTimeout(() => { toast.value = '' }, 2500)
+    } else if (result?.message) {
+      toast.value = result.message
+      setTimeout(() => { toast.value = '' }, 3000)
+    }
+  })
+}
 
 function onDebut(memberIds, groupName) {
   emit('debut', memberIds, groupName, (result) => {
