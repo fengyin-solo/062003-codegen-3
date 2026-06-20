@@ -127,7 +127,8 @@ function canStartTour(groupId) {
 }
 
 function cooldownLeft(groupId) {
-  const last = props.lastTourDay[groupId] || 0
+  const last = props.lastTourDay[groupId]
+  if (last === undefined) return 0
   return Math.max(0, GAME_CONFIG.tour.cooldownDays - (props.day - last))
 }
 

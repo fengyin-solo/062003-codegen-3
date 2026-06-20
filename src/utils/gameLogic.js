@@ -616,8 +616,8 @@ export function scheduleTour(state, groupId, cityNames) {
     return { success: false, message: '该组合正在巡演中' }
   }
 
-  const lastDay = state.lastTourDay[groupId] || 0
-  if (state.day - lastDay < CFG.tour.cooldownDays) {
+  const lastDay = state.lastTourDay[groupId]
+  if (lastDay !== undefined && state.day - lastDay < CFG.tour.cooldownDays) {
     return {
       success: false,
       message: `距上次巡演还需 ${CFG.tour.cooldownDays - (state.day - lastDay)} 天冷却`,
